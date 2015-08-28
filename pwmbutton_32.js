@@ -5,6 +5,7 @@ Cybernetics & Decision Support Systems Laboratory ********************
 @author Andrej Škraba ************************************************
 @author Andrej Koložvari**********************************************
 @author Davorin Kofjač ***********************************************
+@author Radovan Stojanović *******************************************
 *********************************************************************/
 
 var http = require("http").createServer(handler) // tu je pomemben argument "handler", ki je kasneje uporabljen -> "function handler (req, res); v tej vrstici kreiramo server! (http predstavlja napo aplikacijo - app)
