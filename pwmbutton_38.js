@@ -43,13 +43,44 @@ var board = new firmata.Board("/dev/ttyACM0",function(){
     board.pinMode(10, board.MODES.PWM);    
 });
 
+var sendDataToClient = 1; // flag to send data to the client
+
+var refreshFrequency = 500; // frequency of control algorithm refrech in ms
+
+var STARTctrlFW = 0; // zastavica za zagon kontrolnega algortma za Naprej
+var STARTctrlBK = 0; // zastavica za zagon kontrolnega algortma za Nazaj
+var STARTctrlSpinL = 0; // zastavica za vklop kontrolnega algoritma SpinL
+var STARTctrlSpinR = 0; // zastavica za izklop kontrolnega algoritma SpinR
+var STARTctrlHzLRfw = 0; // zastavica za rotacijo koles naprej z različnimi frekvencami, npr. Levo = 10Hz, Desno = 5Hz 
+var STARTctrlHzLRbk = 0; // zastavica za rotacijo koles nazaj z različnimi frekvencami, npr. Levo = 10Hz, Desno = 5Hz     
+    
+var upperLimitPWM = 150; // zgornja meja vrednosti PWM - le ta določa koliko lahko največ kontrolni algoritem pošlje na PWM    
+var lowerLimitPWM = 0; // spodnja meja vrednosti PWM - le ta določa koliko lahko najmanj kontrolni algoritem pošlje na PWM    
+
+var zelenaVrednostNaprej = 0;    
+var zelenaVrednostNazaj = 0;
+    
+var zelenaVrednostSpinLevo = 0;    
+var zelenaVrednostSpinDesno = 0;         
+    
+var zelenaVrednostHzLevo = 0;    
+var zelenaVrednostHzDesno = 0;
+
+var PWMfw = 0; // value for pin forward (pin 5)
+var PWMbk = 0; // falue for pin backward (pin 6)
+var PWMleft = 0; // value for pin left (pin 9)
+var PWMright = 0; // value for pin right (pin 10)
+
+
+
+
 
 // var timePrevious = Date.now();
 
 function countValuesAndChopArrayLeft (timesArrayLeft, timeValue) {
 // function counts the values in the timesArrayLeft that are less or equal to timeValue and chops them out
 // function returns chopped array and number of occurences
-// timesArrayLeft must be defined as global variable not to lose time in between    
+// timesArrayLeft must be defined as global variable should not lose time in between    
 
 counter = 0;
 
@@ -67,9 +98,9 @@ return counter; // function returns the number of occurences of times leess or e
 }
 
 function countValuesAndChopArrayRight (timesArrayRight, timeValue) {
-// function counts the values in the timesArrayLeft that are less or equal to timeValue and chops them out
+// function counts the values in the timesArrayRight that are less or equal to timeValue and chops them out
 // function returns chopped array and number of occurences
-// timesArrayLeft must be defined as global variable not to lose time in between    
+// timesArrayRight must be defined as global variable should not lose time in between    
 
 counter = 0;
 
@@ -94,6 +125,7 @@ io.sockets.on("connection", function(socket) {  // od oklepaja ( dalje imamo arg
                                                 // ko imamo povezavo moramo torej izvesti funkcijo: function (socket)
                                                 // pri tem so argument podatki "socket-a" t.j. argument = socket
                                                 // ustvari se socket_id
+    
     var timePreviousLeft = Date.now(); // inicializiramo čas ob povezavi klienta
     var timePreviousRight = timePreviousLeft;
     
@@ -157,12 +189,405 @@ io.sockets.on("connection", function(socket) {  // od oklepaja ( dalje imamo arg
         
 	});
     
+    
+    socket.on("commandToArduinoFW", function(data) { // ko je socket ON in je posredovan preko connection-a: ukazArduinu (t.j. ukaz: išči funkcijo ukazArduinu)
+        STARTctrlFW = 0; // control flag for ForWard part of the control algorithm
+        STARTctrlBK = 0; // similar
+        STARTctrlSpinL = 0;
+        STARTctrlSpinR = 0;
+        STARTctrlHzLRfw = 0;
+        STARTctrlHzLRbk = 0;
+
+        zelenaVrednostNaprej = 10;
+        zelenaVrednostNazaj = 0;
+        zelenaVrednostSpinLevo = 0; 
+        zelenaVrednostSpinDesno = 0;
+        zelenaVrednostHzLevo = 0; 
+        zelenaVrednostHzDesno = 0;
+        
+        PWMfw = 124; // value for pin forward (pin 5)
+        PWMbk = 0; // falue for pin backward (pin 6)
+        PWMleft = 110; // value for pin left (pin 9)
+        PWMright = 91; // value for pin right (pin 10)
+        
+        // we switch on the relay and LED indicator
+        board.digitalWrite(3, board.HIGH); // na pinu 3 zapišemo vrednost HIGH
+        board.digitalWrite(13, board.HIGH); // na pinu 3 zapišemo vrednost HIGH
+        
+        board.analogWrite(5, PWMfw); // tretji argument je lahko tudi callback - za funkcijo, ki jo kličemo po izvedbi
+        board.analogWrite(6, PWMbk); // tretji argument je lahko tudi callback - za funkcijo, ki jo kličemo po izvedbi
+        board.analogWrite(9, PWMleft); // tretji argument je lahko tudi callback - za funkcijo, ki jo kličemo po izvedbi
+        board.analogWrite(10, PWMright); // tretji argument je lahko tudi callback - za funkcijo, ki jo kličemo po izvedbi
+        
+         socket.emit("refreshClientGUInumValues", {
+            "zelenaVrednostNaprej": zelenaVrednostNaprej,
+            "zelenaVrednostNazaj": zelenaVrednostNazaj,
+            "zelenaVrednostSpinLevo": zelenaVrednostSpinLevo, 
+            "zelenaVrednostSpinDesno": zelenaVrednostSpinDesno,
+            "zelenaVrednostHzLevo": zelenaVrednostHzLevo, 
+            "zelenaVrednostHzDesno": zelenaVrednostHzDesno,
+            "PWMfw": PWMfw,
+            "PWMbk": PWMbk,
+            "PWMleft": PWMleft,
+            "PWMright": PWMright,
+        });
+
+        STARTctrlFW = 1; // zastavico za STARTctrlFW dvignemo, kontrolni algoritem lahko prične z delom, vse nastavitve zgoraj so vnešene
+	
+    });
+    
+    socket.on("commandToArduinoBK", function(data) { // ko je socket ON in je posredovan preko connection-a: ukazArduinu (t.j. ukaz: išči funkcijo ukazArduinu)
+        STARTctrlFW = 0; // control flag for ForWard part of the control algorithm
+        STARTctrlBK = 0; // similar
+        STARTctrlSpinL = 0;
+        STARTctrlSpinR = 0;
+        STARTctrlHzLRfw = 0;
+        STARTctrlHzLRbk = 0;
+
+        zelenaVrednostNaprej = 0;
+        zelenaVrednostNazaj = 10;
+        zelenaVrednostSpinLevo = 0; 
+        zelenaVrednostSpinDesno = 0;
+        zelenaVrednostHzLevo = 0; 
+        zelenaVrednostHzDesno = 0;
+        
+        PWMfw = 0; // value for pin forward (pin 5)
+        PWMbk = 135; // falue for pin backward (pin 6)
+        PWMleft = 110; // value for pin left (pin 9)
+        PWMright = 91; // value for pin right (pin 10)
+        
+        // we switch on the relay and LED indicator
+        board.digitalWrite(3, board.HIGH); // na pinu 3 zapišemo vrednost HIGH
+        board.digitalWrite(13, board.HIGH); // na pinu 3 zapišemo vrednost HIGH
+        
+        board.analogWrite(5, PWMfw); // tretji argument je lahko tudi callback - za funkcijo, ki jo kličemo po izvedbi
+        board.analogWrite(6, PWMbk); // tretji argument je lahko tudi callback - za funkcijo, ki jo kličemo po izvedbi
+        board.analogWrite(9, PWMleft); // tretji argument je lahko tudi callback - za funkcijo, ki jo kličemo po izvedbi
+        board.analogWrite(10, PWMright); // tretji argument je lahko tudi callback - za funkcijo, ki jo kličemo po izvedbi
+        
+         socket.emit("refreshClientGUInumValues", {
+            "zelenaVrednostNaprej": zelenaVrednostNaprej,
+            "zelenaVrednostNazaj": zelenaVrednostNazaj,
+            "zelenaVrednostSpinLevo": zelenaVrednostSpinLevo, 
+            "zelenaVrednostSpinDesno": zelenaVrednostSpinDesno,
+            "zelenaVrednostHzLevo": zelenaVrednostHzLevo, 
+            "zelenaVrednostHzDesno": zelenaVrednostHzDesno,
+            "PWMfw": PWMfw,
+            "PWMbk": PWMbk,
+            "PWMleft": PWMleft,
+            "PWMright": PWMright,
+        });
+
+        STARTctrlBK = 1; // zastavico za STARTctrlFW dvignemo, kontrolni algoritem lahko prične z delom, vse nastavitve zgoraj so vnešene
+	
+    });
+    
+    socket.on("commandToArduinoSpinL", function(data) { // ko je socket ON in je posredovan preko connection-a: ukazArduinu (t.j. ukaz: išči funkcijo ukazArduinu)
+        STARTctrlFW = 0; // control flag for ForWard part of the control algorithm
+        STARTctrlBK = 0; // similar
+        STARTctrlSpinL = 0;
+        STARTctrlSpinR = 0;
+        STARTctrlHzLRfw = 0;
+        STARTctrlHzLRbk = 0;
+
+        zelenaVrednostNaprej = 0;
+        zelenaVrednostNazaj = 0;
+        zelenaVrednostSpinLevo = 10; 
+        zelenaVrednostSpinDesno = 0;
+        zelenaVrednostHzLevo = 0; 
+        zelenaVrednostHzDesno = 0;
+        
+        PWMfw = 85; // value for pin forward (pin 5)
+        PWMbk = 116; // falue for pin backward (pin 6)
+        PWMleft = 131; // value for pin left (pin 9)
+        PWMright = 0; // value for pin right (pin 10)
+        
+        // we switch on the relay and LED indicator
+        board.digitalWrite(3, board.HIGH); // na pinu 3 zapišemo vrednost HIGH
+        board.digitalWrite(13, board.HIGH); // na pinu 3 zapišemo vrednost HIGH
+        
+        board.analogWrite(5, PWMfw); // tretji argument je lahko tudi callback - za funkcijo, ki jo kličemo po izvedbi
+        board.analogWrite(6, PWMbk); // tretji argument je lahko tudi callback - za funkcijo, ki jo kličemo po izvedbi
+        board.analogWrite(9, PWMleft); // tretji argument je lahko tudi callback - za funkcijo, ki jo kličemo po izvedbi
+        board.analogWrite(10, PWMright); // tretji argument je lahko tudi callback - za funkcijo, ki jo kličemo po izvedbi
+        
+         socket.emit("refreshClientGUInumValues", {
+            "zelenaVrednostNaprej": zelenaVrednostNaprej,
+            "zelenaVrednostNazaj": zelenaVrednostNazaj,
+            "zelenaVrednostSpinLevo": zelenaVrednostSpinLevo, 
+            "zelenaVrednostSpinDesno": zelenaVrednostSpinDesno,
+            "zelenaVrednostHzLevo": zelenaVrednostHzLevo, 
+            "zelenaVrednostHzDesno": zelenaVrednostHzDesno,
+            "PWMfw": PWMfw,
+            "PWMbk": PWMbk,
+            "PWMleft": PWMleft,
+            "PWMright": PWMright,
+        });
+
+        STARTctrlSpinL = 1; // zastavico za STARTctrlFW dvignemo, kontrolni algoritem lahko prične z delom, vse nastavitve zgoraj so vnešene
+	
+    });
+    
+socket.on("commandToArduinoSpinR", function(data) { // ko je socket ON in je posredovan preko connection-a: ukazArduinu (t.j. ukaz: išči funkcijo ukazArduinu)
+        STARTctrlFW = 0; // control flag for ForWard part of the control algorithm
+        STARTctrlBK = 0; // similar
+        STARTctrlSpinL = 0;
+        STARTctrlSpinR = 0;
+        STARTctrlHzLRfw = 0;
+        STARTctrlHzLRbk = 0;
+
+        zelenaVrednostNaprej = 0;
+        zelenaVrednostNazaj = 0;
+        zelenaVrednostSpinLevo = 0; 
+        zelenaVrednostSpinDesno = 10;
+        zelenaVrednostHzLevo = 0; 
+        zelenaVrednostHzDesno = 0;
+        
+        PWMfw = 102; // value for pin forward (pin 5)
+        PWMbk = 98; // falue for pin backward (pin 6)
+        PWMleft = 0; // value for pin left (pin 9)
+        PWMright = 127; // value for pin right (pin 10)
+        
+        // we switch on the relay and LED indicator
+        board.digitalWrite(3, board.HIGH); // na pinu 3 zapišemo vrednost HIGH
+        board.digitalWrite(13, board.HIGH); // na pinu 3 zapišemo vrednost HIGH
+        
+        board.analogWrite(5, PWMfw); // tretji argument je lahko tudi callback - za funkcijo, ki jo kličemo po izvedbi
+        board.analogWrite(6, PWMbk); // tretji argument je lahko tudi callback - za funkcijo, ki jo kličemo po izvedbi
+        board.analogWrite(9, PWMleft); // tretji argument je lahko tudi callback - za funkcijo, ki jo kličemo po izvedbi
+        board.analogWrite(10, PWMright); // tretji argument je lahko tudi callback - za funkcijo, ki jo kličemo po izvedbi
+        
+         socket.emit("refreshClientGUInumValues", {
+            "zelenaVrednostNaprej": zelenaVrednostNaprej,
+            "zelenaVrednostNazaj": zelenaVrednostNazaj,
+            "zelenaVrednostSpinLevo": zelenaVrednostSpinLevo, 
+            "zelenaVrednostSpinDesno": zelenaVrednostSpinDesno,
+            "zelenaVrednostHzLevo": zelenaVrednostHzLevo, 
+            "zelenaVrednostHzDesno": zelenaVrednostHzDesno,
+            "PWMfw": PWMfw,
+            "PWMbk": PWMbk,
+            "PWMleft": PWMleft,
+            "PWMright": PWMright,
+        });
+
+        STARTctrlSpinR = 1; // zastavico za STARTctrlFW dvignemo, kontrolni algoritem lahko prične z delom, vse nastavitve zgoraj so vnešene
+	
+    });
+    
+    socket.on("commandToArduinoTurnFwLeftL5R10", function(data) { // ko je socket ON in je posredovan preko connection-a: ukazArduinu (t.j. ukaz: išči funkcijo ukazArduinu)
+        STARTctrlFW = 0; // control flag for ForWard part of the control algorithm
+        STARTctrlBK = 0; // similar
+        STARTctrlSpinL = 0;
+        STARTctrlSpinR = 0;
+        STARTctrlHzLRfw = 0;
+        STARTctrlHzLRbk = 0;
+
+        zelenaVrednostNaprej = 0;
+        zelenaVrednostNazaj = 0;
+        zelenaVrednostSpinLevo = 0; 
+        zelenaVrednostSpinDesno = 0;
+        zelenaVrednostHzLevo = 5; 
+        zelenaVrednostHzDesno = 10;
+        
+        PWMfw = 123; // value for pin forward (pin 5)
+        PWMbk = 0; // falue for pin backward (pin 6)
+        PWMleft = 113; // value for pin left (pin 9)
+        PWMright = 87; // value for pin right (pin 10)
+        
+        // we switch on the relay and LED indicator
+        board.digitalWrite(3, board.HIGH); // na pinu 3 zapišemo vrednost HIGH
+        board.digitalWrite(13, board.HIGH); // na pinu 3 zapišemo vrednost HIGH
+        
+        board.analogWrite(5, PWMfw); // tretji argument je lahko tudi callback - za funkcijo, ki jo kličemo po izvedbi
+        board.analogWrite(6, PWMbk); // tretji argument je lahko tudi callback - za funkcijo, ki jo kličemo po izvedbi
+        board.analogWrite(9, PWMleft); // tretji argument je lahko tudi callback - za funkcijo, ki jo kličemo po izvedbi
+        board.analogWrite(10, PWMright); // tretji argument je lahko tudi callback - za funkcijo, ki jo kličemo po izvedbi
+        
+         socket.emit("refreshClientGUInumValues", {
+            "zelenaVrednostNaprej": zelenaVrednostNaprej,
+            "zelenaVrednostNazaj": zelenaVrednostNazaj,
+            "zelenaVrednostSpinLevo": zelenaVrednostSpinLevo, 
+            "zelenaVrednostSpinDesno": zelenaVrednostSpinDesno,
+            "zelenaVrednostHzLevo": zelenaVrednostHzLevo, 
+            "zelenaVrednostHzDesno": zelenaVrednostHzDesno,
+            "PWMfw": PWMfw,
+            "PWMbk": PWMbk,
+            "PWMleft": PWMleft,
+            "PWMright": PWMright,
+        });
+
+        STARTctrlHzLRfw = 1; // zastavico za STARTctrlFW dvignemo, kontrolni algoritem lahko prične z delom, vse nastavitve zgoraj so vnešene
+	
+    });   
+    
+     socket.on("commandToArduinoTurnFwRightL10R5", function(data) { // ko je socket ON in je posredovan preko connection-a: ukazArduinu (t.j. ukaz: išči funkcijo ukazArduinu)
+        STARTctrlFW = 0; // control flag for ForWard part of the control algorithm
+        STARTctrlBK = 0; // similar
+        STARTctrlSpinL = 0;
+        STARTctrlSpinR = 0;
+        STARTctrlHzLRfw = 0;
+        STARTctrlHzLRbk = 0;
+
+        zelenaVrednostNaprej = 0;
+        zelenaVrednostNazaj = 0;
+        zelenaVrednostSpinLevo = 0; 
+        zelenaVrednostSpinDesno = 0;
+        zelenaVrednostHzLevo = 10; 
+        zelenaVrednostHzDesno = 5;
+        
+        PWMfw = 122; // value for pin forward (pin 5)
+        PWMbk = 0; // falue for pin backward (pin 6)
+        PWMleft = 91; // value for pin left (pin 9)
+        PWMright = 107; // value for pin right (pin 10)
+        
+        // we switch on the relay and LED indicator
+        board.digitalWrite(3, board.HIGH); // na pinu 3 zapišemo vrednost HIGH
+        board.digitalWrite(13, board.HIGH); // na pinu 3 zapišemo vrednost HIGH
+        
+        board.analogWrite(5, PWMfw); // tretji argument je lahko tudi callback - za funkcijo, ki jo kličemo po izvedbi
+        board.analogWrite(6, PWMbk); // tretji argument je lahko tudi callback - za funkcijo, ki jo kličemo po izvedbi
+        board.analogWrite(9, PWMleft); // tretji argument je lahko tudi callback - za funkcijo, ki jo kličemo po izvedbi
+        board.analogWrite(10, PWMright); // tretji argument je lahko tudi callback - za funkcijo, ki jo kličemo po izvedbi
+        
+         socket.emit("refreshClientGUInumValues", {
+            "zelenaVrednostNaprej": zelenaVrednostNaprej,
+            "zelenaVrednostNazaj": zelenaVrednostNazaj,
+            "zelenaVrednostSpinLevo": zelenaVrednostSpinLevo, 
+            "zelenaVrednostSpinDesno": zelenaVrednostSpinDesno,
+            "zelenaVrednostHzLevo": zelenaVrednostHzLevo, 
+            "zelenaVrednostHzDesno": zelenaVrednostHzDesno,
+            "PWMfw": PWMfw,
+            "PWMbk": PWMbk,
+            "PWMleft": PWMleft,
+            "PWMright": PWMright,
+        });
+
+        STARTctrlHzLRfw = 1; // zastavico za STARTctrlFW dvignemo, kontrolni algoritem lahko prične z delom, vse nastavitve zgoraj so vnešene
+	
+    }); 
+    
+     socket.on("commandToArduinoTurnBkLeftL5R10", function(data) { // ko je socket ON in je posredovan preko connection-a: ukazArduinu (t.j. ukaz: išči funkcijo ukazArduinu)
+        STARTctrlFW = 0; // control flag for ForWard part of the control algorithm
+        STARTctrlBK = 0; // similar
+        STARTctrlSpinL = 0;
+        STARTctrlSpinR = 0;
+        STARTctrlHzLRfw = 0;
+        STARTctrlHzLRbk = 0;
+
+        zelenaVrednostNaprej = 0;
+        zelenaVrednostNazaj = 0;
+        zelenaVrednostSpinLevo = 0; 
+        zelenaVrednostSpinDesno = 0;
+        zelenaVrednostHzLevo = 5; 
+        zelenaVrednostHzDesno = 10;
+        
+        PWMfw = 0; // value for pin forward (pin 5)
+        PWMbk = 132; // falue for pin backward (pin 6)
+        PWMleft = 81; // value for pin left (pin 9)
+        PWMright = 109; // value for pin right (pin 10)
+        
+        // we switch on the relay and LED indicator
+        board.digitalWrite(3, board.HIGH); // na pinu 3 zapišemo vrednost HIGH
+        board.digitalWrite(13, board.HIGH); // na pinu 3 zapišemo vrednost HIGH
+        
+        board.analogWrite(5, PWMfw); // tretji argument je lahko tudi callback - za funkcijo, ki jo kličemo po izvedbi
+        board.analogWrite(6, PWMbk); // tretji argument je lahko tudi callback - za funkcijo, ki jo kličemo po izvedbi
+        board.analogWrite(9, PWMleft); // tretji argument je lahko tudi callback - za funkcijo, ki jo kličemo po izvedbi
+        board.analogWrite(10, PWMright); // tretji argument je lahko tudi callback - za funkcijo, ki jo kličemo po izvedbi
+        
+         socket.emit("refreshClientGUInumValues", {
+            "zelenaVrednostNaprej": zelenaVrednostNaprej,
+            "zelenaVrednostNazaj": zelenaVrednostNazaj,
+            "zelenaVrednostSpinLevo": zelenaVrednostSpinLevo, 
+            "zelenaVrednostSpinDesno": zelenaVrednostSpinDesno,
+            "zelenaVrednostHzLevo": zelenaVrednostHzLevo, 
+            "zelenaVrednostHzDesno": zelenaVrednostHzDesno,
+            "PWMfw": PWMfw,
+            "PWMbk": PWMbk,
+            "PWMleft": PWMleft,
+            "PWMright": PWMright,
+        });
+
+        STARTctrlHzLRbk = 1; // zastavico za STARTctrlFW dvignemo, kontrolni algoritem lahko prične z delom, vse nastavitve zgoraj so vnešene
+	
+    }); 
+    
+     socket.on("commandToArduinoTurnBkRightL10R5", function(data) { // ko je socket ON in je posredovan preko connection-a: ukazArduinu (t.j. ukaz: išči funkcijo ukazArduinu)
+        STARTctrlFW = 0; // control flag for ForWard part of the control algorithm
+        STARTctrlBK = 0; // similar
+        STARTctrlSpinL = 0;
+        STARTctrlSpinR = 0;
+        STARTctrlHzLRfw = 0;
+        STARTctrlHzLRbk = 0;
+
+        zelenaVrednostNaprej = 0;
+        zelenaVrednostNazaj = 0;
+        zelenaVrednostSpinLevo = 0; 
+        zelenaVrednostSpinDesno = 0;
+        zelenaVrednostHzLevo = 10; 
+        zelenaVrednostHzDesno = 5;
+        
+        PWMfw = 0; // value for pin forward (pin 5)
+        PWMbk = 132; // falue for pin backward (pin 6)
+        PWMleft = 113; // value for pin left (pin 9)
+        PWMright = 76; // value for pin right (pin 10)
+        
+        // we switch on the relay and LED indicator
+        board.digitalWrite(3, board.HIGH); // na pinu 3 zapišemo vrednost HIGH
+        board.digitalWrite(13, board.HIGH); // na pinu 3 zapišemo vrednost HIGH
+        
+        board.analogWrite(5, PWMfw); // tretji argument je lahko tudi callback - za funkcijo, ki jo kličemo po izvedbi
+        board.analogWrite(6, PWMbk); // tretji argument je lahko tudi callback - za funkcijo, ki jo kličemo po izvedbi
+        board.analogWrite(9, PWMleft); // tretji argument je lahko tudi callback - za funkcijo, ki jo kličemo po izvedbi
+        board.analogWrite(10, PWMright); // tretji argument je lahko tudi callback - za funkcijo, ki jo kličemo po izvedbi
+        
+         socket.emit("refreshClientGUInumValues", {
+            "zelenaVrednostNaprej": zelenaVrednostNaprej,
+            "zelenaVrednostNazaj": zelenaVrednostNazaj,
+            "zelenaVrednostSpinLevo": zelenaVrednostSpinLevo, 
+            "zelenaVrednostSpinDesno": zelenaVrednostSpinDesno,
+            "zelenaVrednostHzLevo": zelenaVrednostHzLevo, 
+            "zelenaVrednostHzDesno": zelenaVrednostHzDesno,
+            "PWMfw": PWMfw,
+            "PWMbk": PWMbk,
+            "PWMleft": PWMleft,
+            "PWMright": PWMright,
+        });
+
+        STARTctrlHzLRbk = 1; // zastavico za STARTctrlFW dvignemo, kontrolni algoritem lahko prične z delom, vse nastavitve zgoraj so vnešene
+	
+    }); 
+    
+    
+    
+    
+    
+    
+    
+    
 	socket.on("ukazArduinuSTOP", function() {
+        STARTctrlFW = 0; // zastavica za zagon kontrolnega algortma za Naprej
+        STARTctrlBK = 0; // zastavica za zagon kontrolnega algortma za Nazaj
+        STARTctrlSpinL = 0; // zastavica za vklop kontrolnega algoritma SpinL
+        STARTctrlSpinR = 0; // zastavica za izklop kontrolnega algoritma SpinR
+        STARTctrlHzLRfw = 0; // zastavica za rotacijo koles naprej z različnimi frekvencami, npr. Levo = 10Hz, Desno = 5Hz 
+        STARTctrlHzLRbk = 0; // zastavica za rotacijo koles nazaj z različnimi frekvencami, npr. Levo = 10Hz, Desno = 5Hz
+        
         board.digitalWrite(3, board.LOW); // na pinu 3 zapišemo vrednost LOW
+        board.digitalWrite(13, board.LOW); // na pinu 3 zapišemo vrednost LOW
         board.analogWrite(5, 0); // Naprej
         board.analogWrite(6, 0); // Nazaj
         board.analogWrite(9, 0); // Levo
         board.analogWrite(10, 0); // Desno
+        
+        zelenaVrednostNaprej = 0;    
+        zelenaVrednostNazaj = 0;
+    
+        zelenaVrednostSpinLevo = 0;    
+        zelenaVrednostSpinDesno = 0;         
+    
+        zelenaVrednostHzLevo = 0;    
+        zelenaVrednostHzDesno = 0;
     });
     
     
@@ -209,36 +634,6 @@ io.sockets.on("connection", function(socket) {  // od oklepaja ( dalje imamo arg
     
     
     
-function frequencyMeasureLeft() {
-    
-    timeNextLeft = Date.now();
-    numberOfCountsLeft = countValuesAndChopArrayLeft(timesArrayLeft, timeNextLeft); // number of counts up to current time within last second
-    timeIntervalLeft = timeNextLeft - timePreviousLeft;
-    timePreviousLeft = timeNextLeft;
-    frequencyLeft = numberOfCountsLeft/(timeIntervalLeft/1000);
-    
-    socket.emit("sporociloKlientu", "No->" + numberOfCountsLeft);
-    socket.emit("sporociloKlientu", "Time interval->" + timeIntervalLeft + "Freq->" + frequencyLeft);
-    
-    socket.emit("readOutFrequencyLeft", {"stevilo": numberOfCountsLeft, "frekvenca": frequencyLeft});
-    
-}
-    
-function frequencyMeasureRight() {
-    
-    timeNextRight = Date.now();
-    numberOfCountsRight = countValuesAndChopArrayRight(timesArrayRight, timeNextRight); // number of counts up to current time within last second
-    timeIntervalRight = timeNextRight - timePreviousRight;
-    timePreviousRight = timeNextRight;
-    frequencyRight = numberOfCountsRight/(timeIntervalRight/1000);
-    
-    socket.emit("sporociloKlientu", "No->" + numberOfCountsRight);
-    socket.emit("sporociloKlientu", "Time interval->" + timeIntervalRight + "Freq->" + frequencyRight);
-    
-    socket.emit("readOutFrequencyRight", {"stevilo": numberOfCountsRight, "frekvenca": frequencyRight});
-    
-}
-    
 function frequencyMeasureLeftRight() {
     
     timeNextLeft = Date.now();
@@ -261,14 +656,579 @@ function frequencyMeasureLeftRight() {
     
     socket.emit("readOutFrequencyLeftRight", {"leftCount": numberOfCountsLeft, "frequencyLeft": frequencyLeft, "rightCount": numberOfCountsRight, "frequencyRight": frequencyRight});
     
+    // **************************************************************************************
+    // Kontrolni algoritem ZAČETEK
+    // **************************************************************************************
+
+    // *************************************************************************
+    // Del algoritma za naprej
+    // *************************************************************************
     
-}    
+    if (zelenaVrednostNazaj == 0 && STARTctrlFW == 1) { // le v primeru, da želene vrednosti v smeri nazaj nismo podali izvedemo algoritem za naprej
+    
+        if (frequencyLeft < zelenaVrednostNaprej || frequencyRight < zelenaVrednostNaprej) { // upoštevati moramo oba enkoderja, saj se lahko enkrat vrti le levi, drugič pa le desni
+            
+            if (PWMfw < upperLimitPWM) { // omejimo najvišjo vrednost PWM za naprej na upperLimitPWM 
+            
+                PWMfw++; // povečamo vrednost PWM za 1
+            }
+                
+                valuePWM = PWMfw;
+                board.analogWrite(5, valuePWM);
+        
+                if (frequencyLeft > frequencyRight) { // korekcija če je razlika v hitrosti vrtenja levega in desnega kolesa
+                    
+                    if (PWMleft < upperLimitPWM) { // omejimo najvišjo vrednost PWM za levo na upperLimitPWM 
+                        PWMleft++; // povečamo vrednost PWM za LEVO rotacijo za 1
+                    }
+                    valuePWMleft = PWMleft;
+                    
+                    if (PWMright > 0) { // omejimo najmanjšo vrednost PWM za desno na 0 
+                        PWMright--; // zmanjšamo vrednost PWM za DESNO rotacijo za 1
+                    }
+                    valuePWMright = PWMright;
+                    
+                    board.analogWrite(9, valuePWMleft);
+                    board.analogWrite(10, valuePWMright);
+                }
+                else if (frequencyLeft < frequencyRight) { // korekcija če je razlika v hitrosti vrtenja levega in desnega kolesa
+                    
+                    if (PWMleft > 0) { // omejimo najmanjšo vrednost PWM za levo na 0 
+                        PWMleft--; // povečamo vrednost PWM za LEVO rotacijo 1
+                    }
+                    valuePWM = PWMleft;
+                    
+                    if (PWMright < upperLimitPWM) { // omejimo najvišjo vrednost PWM za desno na upperLimitPWM 
+                        PWMright++; // povečamo vrednost PWM za DESNO rotacijo za 1
+                    }
+                    valuePWMright = PWMright;
+                    
+                    board.analogWrite(9, valuePWM);
+                    board.analogWrite(10, valuePWMright);
+                }
+            //}
+        }
+        else if (frequencyLeft > zelenaVrednostNaprej || frequencyRight > zelenaVrednostNaprej) {
+            
+            if (PWMfw > 0) { // omejimo najnižjo vrednost PWM za NAPREJ na 0 - DA NE GREMO V - (divja rotacia!) 
+            
+                PWMfw--; // zmanjšamo vrednost PWM za 1
+            }
+                valuePWM = PWMfw;
+                board.analogWrite(5, valuePWM);
+
+                if (frequencyLeft > frequencyRight) {
+                   
+                    if (PWMleft < upperLimitPWM) { // omejimo najvišjo vrednost PWM za levo na upperLimitPWM 
+                        PWMleft++; // povečamo vrednost PWM za LEVO rotacijo za 1
+                    }
+                    valuePWMleft = PWMleft;
+                    
+                    if (PWMright > 0) { // omejimo najmanjšo vrednost PWM za desno na 0 
+                        PWMright--; // zmanjšamo vrednost PWM za DESNO rotacijo za 1
+                    }
+                    valuePWMright = PWMright;
+                    
+                    board.analogWrite(9, valuePWMleft);
+                    board.analogWrite(10, valuePWMright);
+                }
+                else if (frequencyLeft < frequencyRight) {
+                   
+                    if (PWMleft > 0) { // omejimo najmanjšo vrednost PWM za levo na 0 
+                        PWMleft--; // povečamo vrednost PWM za LEVO rotacijo 1
+                    }
+                    valuePWM = PWMleft;
+                    
+                    if (PWMright < upperLimitPWM) { // omejimo najvišjo vrednost PWM za desno na upperLimitPWM
+                        PWMright++; // povečamo vrednost PWM za DESNO rotacijo za 1
+                    }
+                    valuePWMright = PWMright;
+                    
+                    board.analogWrite(9, valuePWM);
+                    board.analogWrite(10, valuePWMright);
+                }
+            //}
+
+        }
+    }
+    
+    // *****************************************************************************
+    // Del algoritma za nazaj
+    // *****************************************************************************
+    
+    else if (zelenaVrednostNaprej == 0 && STARTctrlBK == 1) {// // le v primeru, da želene vrednosti v smeri naprej nismo podali izvedemo algoritem za nazaj
+        //socket.emit("ukazArduinu", {"stevilkaUkaza": stevilkaUkaza, "pinNo": 5, "valuePWM": 1}); // za vsak primer pin naprej postavimo na 0
+    
+        if (frequencyLeft < zelenaVrednostNazaj || frequencyRight < zelenaVrednostNazaj) { // upoštevati moramo oba enkoderja, saj se lahko enkrat vrti le levi, drugič pa le desni
+            
+            if (PWMbk < upperLimitPWM) { // omejimo najvišjo vrednost za nazaj na upperLimitPWM 
+        
+                PWMbk++; // povečamo vrednost PWM nazaj za 1
+            }
+                valuePWM = PWMbk;
+                board.analogWrite(6, valuePWM);
+        
+                if (frequencyLeft < frequencyRight) {
+                    
+                    if (PWMleft < upperLimitPWM) { // omejimo najvišjo vrednost PWM za levo na upperLimitPWM 
+                        PWMleft++; // povečamo vrednost PWM za LEVO rotacijo za 1
+                    }
+                    valuePWMleft = PWMleft;
+                    
+                    if (PWMright > 0) { // omejimo najmanjšo vrednost PWM za desno na 0 
+                        PWMright--; // zmanjšamo vrednost PWM za DESNO rotacijo za 1
+                    }
+                    valuePWMright = PWMright;
+                    
+                    board.analogWrite(9, valuePWMleft);
+                    board.analogWrite(10, valuePWMright);
+                }
+                else if (frequencyLeft > frequencyRight) {
+                    
+                    if (PWMleft > 0) { // omejimo najmanjšo vrednost PWM za levo na 0 
+                        PWMleft--; // povečamo vrednost PWM za LEVO rotacijo 1
+                    }
+                    valuePWM = PWMleft;
+                    
+                    if (PWMright < upperLimitPWM) { // omejimo najvišjo vrednost PWM za desno na upperLimitPWM 
+                        PWMright++; // povečamo vrednost PWM za DESNO rotacijo za 1
+                    }
+                    valuePWMright = PWMright;
+                    
+                    board.analogWrite(9, valuePWM);
+                    board.analogWrite(10, valuePWMright);
+                }
+            //}
+        
+        }
+        else if (frequencyLeft > zelenaVrednostNazaj || frequencyRight > zelenaVrednostNazaj) {
+            
+            if (PWMbk > 0) { // omejimo najnižjo vrednost za NAZAJ na 0 - DA NE GREMO V - (divja rotacia!) 
+
+                PWMbk--; // zmanjšamo vrednost PWM nazaj za 1
+            }
+                valuePWM = PWMbk;
+                board.analogWrite(6, valuePWM);
+
+                if (frequencyLeft < frequencyRight) {
+                    
+                    if (PWMleft < upperLimitPWM) { // omejimo najvišjo vrednost PWM za levo na upperLimitPWM 
+                        PWMleft++; // povečamo vrednost PWM za LEVO rotacijo za 1
+                    }
+                    valuePWMleft = PWMleft;
+                    
+                    if (PWMright > 0) { // omejimo najmanjšo vrednost PWM za desno na 0 
+                        PWMright--; // zmanjšamo vrednost PWM za DESNO rotacijo za 1
+                    }
+                    valuePWMright = PWMright;
+                    
+                    board.analogWrite(9, valuePWMleft);
+                    board.analogWrite(10, valuePWMright);
+                }
+                else if (frequencyLeft > frequencyRight) {
+                    
+                    if (PWMleft > 0) { // omejimo najmanjšo vrednost PWM za levo na 0 
+                        PWMleft--; // povečamo vrednost PWM za LEVO rotacijo 1
+                    }
+                    valuePWM = PWMleft;
+                    
+                    if (PWMright < upperLimitPWM) { // omejimo najvišjo vrednost PWM za desno na upperLimitPWM 
+                        PWMright++; // povečamo vrednost PWM za DESNO rotacijo za 1
+                    }
+                    valuePWMright = PWMright;
+                    
+                    board.analogWrite(9, valuePWM);
+                    board.analogWrite(10, valuePWMright);
+                }
+            //}
+        }
     
     
+    }
     
-//var frequencyMeasureLeftTimer=setInterval(function(){frequencyMeasureLeft()}, 500);
-//var frequencyMeasureRightTimer=setInterval(function(){frequencyMeasureRight()}, 500);
     
-var frequencyMeasureLeftRightTimer=setInterval(function(){frequencyMeasureLeftRight()}, 500);        
+    // *************************************************************************
+    // Del algoritma za SpinLEFT
+    // *************************************************************************
+    
+    if (zelenaVrednostSpinDesno == 0 && STARTctrlSpinL == 1) { // le v primeru, da želene vrednosti v smeri SpinDesno nismo podali izvedemo algoritem za SpinLevo
+    
+        if (frequencyLeft < zelenaVrednostSpinLevo || frequencyRight < zelenaVrednostSpinLevo) { // upoštevati moramo oba enkoderja, saj se lahko enkrat vrti le levi, drugič pa le desni
+            
+            if (PWMleft < upperLimitPWM) { // omejimo najvišjo vrednost PWM za naprej na upperLimitPWM 
+            
+                PWMleft++; // povečamo vrednost PWM za 1
+            }
+                valuePWM = PWMleft;
+                board.analogWrite(9, valuePWM);
+        
+                if (frequencyLeft > frequencyRight) { // korekcija če je razlika v hitrosti vrtenja levega in desnega kolesa
+                    
+                    if (PWMfw < upperLimitPWM) { // omejimo najvišjo vrednost PWM za levo na upperLimitPWM 
+                        PWMfw++; // povečamo vrednost PWM za LEVO rotacijo za 1
+                    }
+                    valuePWMleft = PWMfw;
+                    
+                    if (PWMbk > 0) { // omejimo najmanjšo vrednost PWM za desno na 0 
+                        PWMbk--; // zmanjšamo vrednost PWM za DESNO rotacijo za 1
+                    }
+                    valuePWMright = PWMbk;
+                    
+                    board.analogWrite(5, valuePWMleft);
+                    board.analogWrite(6, valuePWMright);
+                }
+                else if (frequencyLeft < frequencyRight) { // korekcija če je razlika v hitrosti vrtenja levega in desnega kolesa
+                    
+                    if (PWMfw > 0) { // omejimo najmanjšo vrednost PWM za levo na 0 
+                        PWMfw--; // povečamo vrednost PWM za LEVO rotacijo 1
+                    }
+                    valuePWM = PWMfw;
+                    
+                    if (PWMbk < upperLimitPWM) { // omejimo najvišjo vrednost PWM za desno na upperLimitPWM 
+                        PWMbk++; // povečamo vrednost PWM za DESNO rotacijo za 1
+                    }
+                    valuePWMright = PWMbk;
+                    
+                    board.analogWrite(5, valuePWM);
+                    board.analogWrite(6, valuePWMright);
+                }
+            //}
+        }
+        else if (frequencyLeft > zelenaVrednostSpinLevo || frequencyRight > zelenaVrednostSpinLevo) {
+            
+            if (PWMleft > 0) { // omejimo najnižjo vrednost PWM za NAPREJ na 0 - DA NE GREMO V - (divja rotacia!) 
+            
+                PWMleft--; // zmanjšamo vrednost PWM za 1
+            }
+                valuePWM = PWMleft;
+                board.analogWrite(9, valuePWM);
+
+                if (frequencyLeft > frequencyRight) {
+                   
+                    if (PWMfw < upperLimitPWM) { // omejimo najvišjo vrednost PWM za levo na upperLimitPWM 
+                        PWMfw++; // povečamo vrednost PWM za LEVO rotacijo za 1
+                    }
+                    valuePWMleft = PWMfw;
+                    
+                    if (PWMbk > 0) { // omejimo najmanjšo vrednost PWM za desno na 0 
+                        PWMbk--; // zmanjšamo vrednost PWM za DESNO rotacijo za 1
+                    }
+                    valuePWMright = PWMbk;
+                    
+                    board.analogWrite(5, valuePWMleft);
+                    board.analogWrite(6, valuePWMright);
+                }
+                else if (frequencyLeft < frequencyRight) {
+                   
+                    if (PWMfw > 0) { // omejimo najmanjšo vrednost PWM za levo na 0 
+                        PWMfw--; // povečamo vrednost PWM za LEVO rotacijo 1
+                    }
+                    valuePWM = PWMfw;
+                    
+                    if (PWMbk < upperLimitPWM) { // omejimo najvišjo vrednost PWM za desno na upperLimitPWM
+                        PWMbk++; // povečamo vrednost PWM za DESNO rotacijo za 1
+                    }
+                    valuePWMright = PWMright;
+                    
+                    board.analogWrite(5, valuePWM);
+                    board.analogWrite(6, valuePWMright);
+                }
+            //}
+
+        }
+    }
+    
+    // *****************************************************************************
+    // Del algoritma za SpinRIGHT
+    // *****************************************************************************
+    
+    else if (zelenaVrednostSpinLevo == 0 && STARTctrlSpinR == 1) { // le v primeru, da želene vrednosti v smeri SpinLevo nismo podali izvedemo algoritem za SpinDesno
+    
+        if (frequencyLeft < zelenaVrednostSpinDesno || frequencyRight < zelenaVrednostSpinDesno) { // upoštevati moramo oba enkoderja, saj se lahko enkrat vrti le levi, drugič pa le desni
+            
+            if (PWMright < upperLimitPWM) { // omejimo najvišjo vrednost za desno na upperLimitPWM 
+        
+                PWMright++; // povečamo vrednost PWM nazaj za 1
+            }
+                valuePWM = PWMright;
+                board.analogWrite(10, valuePWM);
+        
+                if (frequencyLeft < frequencyRight) {
+                    
+                    if (PWMfw < upperLimitPWM) { // omejimo najvišjo vrednost PWM za levo na upperLimitPWM 
+                        PWMfw++; // povečamo vrednost PWM za LEVO rotacijo za 1
+                    }
+                    valuePWMleft = PWMfw;
+                    
+                    if (PWMbk > 0) { // omejimo najmanjšo vrednost PWM za desno na 0 
+                        PWMbk--; // zmanjšamo vrednost PWM za DESNO rotacijo za 1
+                    }
+                    valuePWMright = PWMbk;
+                    
+                    board.analogWrite(5, valuePWMleft);
+                    board.analogWrite(6, valuePWMright);
+                }
+                else if (frequencyLeft > frequencyRight) {
+                    
+                    if (PWMfw > 0) { // omejimo najmanjšo vrednost PWM za levo na 0 
+                        PWMfw--; // povečamo vrednost PWM za LEVO rotacijo 1
+                    }
+                    valuePWM = PWMfw;
+                    
+                    if (PWMbk < upperLimitPWM) { // omejimo najvišjo vrednost PWM za desno na upperLimitPWM 
+                        PWMbk++; // povečamo vrednost PWM za DESNO rotacijo za 1
+                    }
+                    valuePWMright = PWMbk;
+                    
+                    board.analogWrite(5, valuePWM);
+                    board.analogWrite(6, valuePWMright);
+                }
+            //}
+        
+        }
+        else if (frequencyLeft > zelenaVrednostSpinDesno || frequencyRight > zelenaVrednostSpinDesno) {
+            
+            if (PWMright > 0) { // omejimo najnižjo vrednost za NAZAJ na 0 - DA NE GREMO V - (divja rotacia!) 
+
+                PWMright--; // zmanjšamo vrednost PWM nazaj za 1
+            }
+                valuePWM = PWMright;
+                board.analogWrite(10, valuePWM);
+
+                if (frequencyLeft < frequencyRight) {
+                    
+                    if (PWMfw < upperLimitPWM) { // omejimo najvišjo vrednost PWM za levo na upperLimitPWM 
+                        PWMfw++; // povečamo vrednost PWM za LEVO rotacijo za 1
+                    }
+                    valuePWMleft = PWMfw;
+                    
+                    if (PWMbk > 0) { // omejimo najmanjšo vrednost PWM za desno na 0 
+                        PWMbk--; // zmanjšamo vrednost PWM za DESNO rotacijo za 1
+                    }
+                    valuePWMright = PWMbk;
+                    
+                    board.analogWrite(5, valuePWMleft);
+                    board.analogWrite(6, valuePWMright);
+                }
+                else if (frequencyLeft > frequencyRight) {
+                    
+                    if (PWMfw > 0) { // omejimo najmanjšo vrednost PWM za levo na 0 
+                        PWMfw--; // povečamo vrednost PWM za LEVO rotacijo 1
+                    }
+                    valuePWM = PWMfw;
+                    
+                    if (PWMbk < upperLimitPWM) { // omejimo najvišjo vrednost PWM za desno na upperLimitPWM 
+                        PWMbk++; // povečamo vrednost PWM za DESNO rotacijo za 1
+                    }
+                    valuePWMright = PWMbk;
+                    
+                    board.analogWrite(5, valuePWM);
+                    board.analogWrite(6, valuePWMright);
+                }
+            //}
+        }
+    
+    
+    }
+    
+    // *************************************************************************
+    // Del algoritma za Hz naprej
+    // *************************************************************************
+    
+    if (STARTctrlHzLRfw == 1) { // če je zastavica 1 izvedemo ta del algoritma
+        
+                if (frequencyLeft > zelenaVrednostHzLevo) { // korekcija če je razlika v hitrosti vrtenja levega in desnega kolesa
+                    
+                    if (PWMleft < upperLimitPWM) { // omejimo najvišjo vrednost PWM za levo na upperLimitPWM 
+                        PWMleft++; // povečamo vrednost PWM za LEVO rotacijo za 1
+                    }
+                    valuePWMleft = PWMleft;
+                    
+                    if (PWMright > 0) { // omejimo najmanjšo vrednost PWM za desno na 0 
+                        PWMright--; // zmanjšamo vrednost PWM za DESNO rotacijo za 1
+                    }
+                    valuePWMright = PWMright;
+                    
+                    if (frequencyRight < zelenaVrednostHzDesno) { // upoštevati moramo oba enkoderja, saj se lahko enkrat vrti le levi, drugič pa le desni
+                        if (PWMfw < upperLimitPWM) { // omejimo najvišjo vrednost PWM za naprej na upperLimitPWM 
+                            PWMfw++; // povečamo vrednost PWM za 1
+                        }
+                    }            
+                    else if (PWMfw > 0) { // omejimo najnižjo vrednost PWM za NAPREJ na 0 - DA NE GREMO V - (divja rotacia!) 
+                        PWMfw--; // zmanjšamo vrednost PWM za 1
+                    }
+     
+                }
+
+                else if (frequencyLeft < zelenaVrednostHzLevo) { // korekcija če je razlika v hitrosti vrtenja levega in desnega kolesa
+                    
+                    if (PWMleft > 0) { // omejimo najmanjšo vrednost PWM za levo na 0 
+                        PWMleft--; // povečamo vrednost PWM za LEVO rotacijo 1
+                    }
+                    valuePWMleft = PWMleft;
+                    
+                    if (PWMright < upperLimitPWM) { // omejimo najvišjo vrednost PWM za desno na upperLimitPWM 
+                        PWMright++; // povečamo vrednost PWM za DESNO rotacijo za 1
+                    }
+                    valuePWMright = PWMright;
+            
+                    if (frequencyRight > zelenaVrednostHzDesno) {
+                        if (PWMfw > 0) { // omejimo najnižjo vrednost PWM za NAPREJ na 0 - DA NE GREMO V - (divja rotacia!) 
+                            PWMfw--; // zmanjšamo vrednost PWM za 1
+                        }
+                    }
+                    else if (PWMfw < upperLimitPWM) { // omejimo najvišjo vrednost PWM za naprej na upperLimitPWM 
+                        PWMfw++; // povečamo vrednost PWM za 1
+                    }
+
+                }
+        
+                else if (frequencyRight < zelenaVrednostHzDesno) { // upoštevati moramo oba enkoderja, saj se lahko enkrat vrti le levi, drugič pa le desni
+                        
+                    if (PWMleft < upperLimitPWM) { // omejimo najvišjo vrednost PWM za levo na upperLimitPWM 
+                        PWMleft++; // povečamo vrednost PWM za LEVO rotacijo za 1
+                    }
+                    valuePWMleft = PWMleft;
+                    
+                    if (PWMright > 0) { // omejimo najmanjšo vrednost PWM za desno na 0 
+                        PWMright--; // zmanjšamo vrednost PWM za DESNO rotacijo za 1
+                    }
+                    valuePWMright = PWMright;
+
+                }
+                
+                else if (frequencyRight > zelenaVrednostHzDesno) {
+
+                    if (PWMleft > 0) { // omejimo najmanjšo vrednost PWM za levo na 0 
+                        PWMleft--; // povečamo vrednost PWM za LEVO rotacijo 1
+                    }
+                    valuePWMleft = PWMleft;
+                    
+                    if (PWMright < upperLimitPWM) { // omejimo najvišjo vrednost PWM za desno na upperLimitPWM 
+                        PWMright++; // povečamo vrednost PWM za DESNO rotacijo za 1
+                    }
+                    valuePWMright = PWMright;
+            
+                }                  
+
+                valuePWM = PWMfw;
+                board.analogWrite(5, valuePWM); 
+        
+                board.analogWrite(9, valuePWMleft);
+                board.analogWrite(10, valuePWMright);
+    
+    }
+    
+    
+    // *****************************************************************************
+    // Del algoritma za Hz nazaj
+    // *****************************************************************************
+    
+    else if (STARTctrlHzLRbk == 1) {// če je zastavica za ta del algoritma 1 ga izvedemo
+        
+                if (frequencyLeft < zelenaVrednostHzLevo) {
+                    
+                    if (PWMleft < upperLimitPWM) { // omejimo najvišjo vrednost PWM za levo na upperLimitPWM 
+                        PWMleft++; // povečamo vrednost PWM za LEVO rotacijo za 1
+                    }
+                    valuePWMleft = PWMleft;
+                    
+                    if (PWMright > 0) { // omejimo najmanjšo vrednost PWM za desno na 0 
+                        PWMright--; // zmanjšamo vrednost PWM za DESNO rotacijo za 1
+                    }
+                    valuePWMright = PWMright;
+                    
+                    if (frequencyRight > zelenaVrednostHzDesno) {
+                        if (PWMbk > 0) { // omejimo najnižjo vrednost za NAZAJ na 0 - DA NE GREMO V - (divja rotacia!) 
+                            PWMbk--; // zmanjšamo vrednost PWM nazaj za 1
+                        }
+                    }
+                    else if (PWMbk < upperLimitPWM) { // omejimo najvišjo vrednost za nazaj na upperLimitPWM 
+                        PWMbk++; // povečamo vrednost PWM nazaj za 1
+                    }
+                    
+                }
+        
+                else if (frequencyLeft > zelenaVrednostHzLevo) {
+                    
+                    if (PWMleft > 0) { // omejimo najmanjšo vrednost PWM za levo na 0 
+                        PWMleft--; // povečamo vrednost PWM za LEVO rotacijo 1
+                    }
+                    valuePWMleft = PWMleft;
+                    
+                    if (PWMright < upperLimitPWM) { // omejimo najvišjo vrednost PWM za desno na upperLimitPWM 
+                        PWMright++; // povečamo vrednost PWM za DESNO rotacijo za 1
+                    }
+                    valuePWMright = PWMright;
+                
+                    if (frequencyRight < zelenaVrednostHzDesno) { // upoštevati moramo oba enkoderja, saj se lahko enkrat vrti le levi, drugič pa le desni
+                        if (PWMbk < upperLimitPWM) { // omejimo najvišjo vrednost za nazaj na upperLimitPWM 
+                            PWMbk++; // povečamo vrednost PWM nazaj za 1
+                        }
+                    }
+                    else if (PWMbk > 0) { // omejimo najnižjo vrednost za NAZAJ na 0 - DA NE GREMO V - (divja rotacia!) 
+                        PWMbk--; // zmanjšamo vrednost PWM nazaj za 1
+                    }
+                }
+
+                else if (frequencyRight > zelenaVrednostHzDesno) {
+                    if (PWMleft < upperLimitPWM) { // omejimo najvišjo vrednost PWM za levo na upperLimitPWM 
+                        PWMleft++; // povečamo vrednost PWM za LEVO rotacijo za 1
+                    }
+                    valuePWMleft = PWMleft;
+                    
+                    if (PWMright > 0) { // omejimo najmanjšo vrednost PWM za desno na 0 
+                        PWMright--; // zmanjšamo vrednost PWM za DESNO rotacijo za 1
+                    }
+                    valuePWMright = PWMright;
+                }
+        
+        
+                else if (frequencyRight < zelenaVrednostHzDesno) { // upoštevati moramo oba enkoderja, saj se lahko enkrat vrti le levi, drugič pa le desni
+
+                    if (PWMleft > 0) { // omejimo najmanjšo vrednost PWM za levo na 0 
+                        PWMleft--; // povečamo vrednost PWM za LEVO rotacijo 1
+                    }
+                    valuePWMleft = PWMleft;
+                    
+                    if (PWMright < upperLimitPWM) { // omejimo najvišjo vrednost PWM za desno na upperLimitPWM 
+                        PWMright++; // povečamo vrednost PWM za DESNO rotacijo za 1
+                    }
+                    valuePWMright = PWMright;
+                    
+                }
+                    
+                valuePWM = PWMbk;
+                board.analogWrite(6, valuePWM);
+        
+                board.analogWrite(9, valuePWMleft);
+                board.analogWrite(10, valuePWMright);
+        
+    }
+    
+    
+    // **************************************************************************************
+    // Kontrolni algoritem KONEC
+    // **************************************************************************************       
+ 
+    socket.emit("refreshClientGUInumValues", {
+            "zelenaVrednostNaprej": zelenaVrednostNaprej,
+            "zelenaVrednostNazaj": zelenaVrednostNazaj,
+            "zelenaVrednostSpinLevo": zelenaVrednostSpinLevo, 
+            "zelenaVrednostSpinDesno": zelenaVrednostSpinDesno,
+            "zelenaVrednostHzLevo": zelenaVrednostHzLevo, 
+            "zelenaVrednostHzDesno": zelenaVrednostHzDesno,
+            "PWMfw": PWMfw,
+            "PWMbk": PWMbk,
+            "PWMleft": PWMleft,
+            "PWMright": PWMright,
+    });
+    
+}
+    
+function refreshGUI () {
+};    
+    
+var frequencyMeasureLeftRightTimer=setInterval(function(){frequencyMeasureLeftRight()}, refreshFrequency);        
     
 });

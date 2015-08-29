@@ -44,7 +44,8 @@ DES_PWM <input id="val6" value=10 />
 
 <script>
 // JavaScript, ki bo uporabljen na strani klienta zapišemo tu
-var socket = io.connect("193.2.123.38:8080"); // ustvarimo spremenljivko socket in povemo, kam se povežemo (vtaknemo)
+//var socket = io.connect("193.2.123.38:8080"); // ustvarimo spremenljivko socket in povemo, kam se povežemo (vtaknemo)
+var socket = io.connect("192.168.3.209:8080"); // ustvarimo spremenljivko socket in povemo, kam se povežemo (vtaknemo)    
                                                // io.connect je iz knjižnice socket.io.js, argument je, kam se priključimo
                                                // ta vrstica pove, naj se klient poveže s strežnikom na naslovu http://93.103.18.222:8080
                                                // torej zgrabimo socket connection na portu 8080
